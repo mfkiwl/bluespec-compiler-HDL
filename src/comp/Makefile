@@ -94,6 +94,15 @@ GHCPATCH=$(shell echo $(GHCVERSION) | cut -d. -f3)
 # Set version-specific GHC flags
 #
 #$(info Building with GHC $(GHCMAJOR).$(GHCMINOR))
+ifeq ($(GHCMAJOR),9)
+
+GHC += -Wtabs -fmax-pmcheck-models=800
+
+GHCEXTRAPKGS =-package syb -package integer-gmp
+GHCPROFAUTO = -fprof-auto
+
+# end ifeq ($(GHCMAJOR),9)
+else
 ifeq ($(GHCMAJOR),8)
 
 GHC += -Wtabs
@@ -125,6 +134,7 @@ endif
 else
 # Not GHC 8 or 7
 $(error Unrecognized GHC major version: $(GHCMAJOR))
+endif
 endif
 endif
 
@@ -161,7 +171,7 @@ GHC += -optl -headerpad_max_install_names
 endif
 
 # flags for the haskell compiler RTS
-GHCRTSFLAGS ?= +RTS -M3G -A128m -RTS
+GHCRTSFLAGS ?= +RTS -M4G -A128m -RTS
 
 # flags for the haskell compile
 GHCINCLUDES =  \

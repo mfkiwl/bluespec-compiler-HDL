@@ -240,15 +240,18 @@ checkBSrcFlags flags filename =
     -- error if entry point is given
     case (entry flags) of
       Just e -> DError [(cmdPosition, EEntryForCodeGen e)]
-      -- else, everything's ok, so use the result
       Nothing ->
+        -- The -remove-dollar flag only applies to the Verilog backend
         if (removeVerilogDollar flags && (backend flags /= Just Verilog))
         then DError [(cmdPosition, EDollarNoVerilog)]
         else
+        -- If the user hasn't allowed Bluesim/Verilog to diverge,
+        -- then don't-cares can only be 2-state values
         if (not (optUndet flags) &&
             ( (unSpecTo flags == "X") || (unSpecTo flags == "Z") ))
         then DError [(cmdPosition, ENoOptUndetNoXZ (unSpecTo flags))]
         else
+        -- Everything is OK for source compilation
         DBlueSrc flags filename
 
 
@@ -277,21 +280,32 @@ checkLinkFlags flags names =
         if (removeVerilogDollar flags)
         then DError [(cmdPosition, EDollarLink)]
         else
-        -- handle Verilog (check for entry point)
+        -- Verilog backend
         if (backend flags == Just Verilog)
-        then case (entry flags) of
+        then -- An entry point must be specified
+             case (entry flags) of
                  Nothing -> DError [(cmdPosition, ENoEntryPoint)]
-                 Just top -> DVerLink flags top (map VFileName hdlnames)
+                 Just top ->
+                     -- Everything is OK for Verilog linking
+                     DVerLink flags top (map VFileName hdlnames)
                                 anames cnames
         else
-        -- handle Bluesim (check for entry point)
+        -- Bluesim backend
         if (backend flags == Just Bluesim)
-        then if not (null hdlnames)
+        then -- Only 2-state values are allowed for don't-cares
+             if ( (unSpecTo flags == "X") || (unSpecTo flags == "Z") )
+             then DError [(cmdPosition, EBluesimNoXZ (unSpecTo flags))]
+             else
+             -- Verilog files cannot be provided
+             if not (null hdlnames)
              then DError [(cmdPosition, EVerilogFilesWithSimBackend hdlnames)]
              else
-                 case (entry flags) of
-                     Nothing -> DError [(cmdPosition, ENoEntryPoint)]
-                     Just top -> DSimLink flags top anames cnames
+             -- An entry point must be specified
+             case (entry flags) of
+                 Nothing -> DError [(cmdPosition, ENoEntryPoint)]
+                 Just top ->
+                     -- Everything is OK for Bluesim linking
+                     DSimLink flags top anames cnames
         -- error if no backend chosen
         else DError [(cmdPosition, ENoBackendLinking)]
 
@@ -1789,24 +1803,24 @@ showFlagsRaw flags =
     let render (k, v) = "\t" ++ k ++ " = " ++ v
         fields =
          [("aggImpConds", show (aggImpConds flags)),
+          ("allowIncoherentMatches", show (allowIncoherentMatches flags)),
           ("backend", show (backend flags)),
           ("bdir", show (bdir flags)),
           ("biasMethodScheduling", show (biasMethodScheduling flags)),
           ("bluespecDir", show (bluespecDir flags)),
+          ("cDebug", show (cDebug flags)),
+          ("cFlags", show (cFlags flags)),
           ("cIncPath", show (cIncPath flags)),
           ("cLibPath", show (cLibPath flags)),
           ("cLibs", show (cLibs flags)),
-          ("cDebug", show (cDebug flags)),
-          ("cFlags", show (cFlags flags)),
-          ("cxxFlags", show (cxxFlags flags)),
           ("cdir", show (cdir flags)),
           ("cpp", show (cpp flags)),
           ("cppFlags", show (cppFlags flags)),
           ("crossInfo", show (crossInfo flags)),
+          ("cxxFlags", show (cxxFlags flags)),
           ("defines", show (defines flags)),
           ("demoteErrors", show (demoteErrors flags)),
           ("disableAssertions", show (disableAssertions flags)),
-          ("passThroughAssertions", show (passThroughAssertions flags)),
           ("doICheck", show (doICheck flags)),
           ("dumpAll", show (dumpAll flags)),
           ("dumps", show (dumps flags)),
@@ -1821,8 +1835,10 @@ showFlagsRaw flags =
           ("genABinVerilog", show (genABinVerilog flags)),
           ("genName", show (genName flags)),
           ("genSysC", show (genSysC flags)),
-          ("ifcPathRaw", show (ifcPathRaw flags)),
+          ("ifLift", show (ifLift flags)),
           ("ifcPath", show (ifcPath flags)),
+          ("ifcPathRaw", show (ifcPathRaw flags)),
+          ("infoDir", show (infoDir flags)),
           ("inlineBool", show (inlineBool flags)),
           ("inlineISyntax", show (inlineISyntax flags)),
           ("inlineSimple", show (inlineSimple flags)),
@@ -1831,9 +1847,9 @@ showFlagsRaw flags =
           ("keepInlined", show (keepInlined flags)),
           ("kill", show (kill flags)),
           ("linkFlags", show (linkFlags flags)),
-          ("ifLift", show (ifLift flags)),
           ("maxTIStackDepth", show (maxTIStackDepth flags)),
           ("methodBVI", show (methodBVI flags)),
+          ("methodConditions", show (methodConditions flags)),
           ("methodConf", show (methodConf flags)),
           ("neatNames", show (neatNames flags)),
           ("oFile", show (oFile flags)),
@@ -1842,33 +1858,38 @@ showFlagsRaw flags =
           ("optAndOr", show (optAndOr flags)),
           ("optBitConst", show (optBitConst flags)),
           ("optBool", show (optBool flags)),
+          ("optFinalPass", show (optFinalPass flags)),
           ("optIfMux", show (optIfMux flags)),
           ("optIfMuxSize", show (optIfMuxSize flags)),
           ("optJoinDefs", show (optJoinDefs flags)),
           ("optMux", show (optMux flags)),
-          ("optMuxExpand", show (optMuxExpand flags)),
           ("optMuxConst", show (optMuxConst flags)),
+          ("optMuxExpand", show (optMuxExpand flags)),
           ("optSched", show (optSched flags)),
           ("optUndet", show (optUndet flags)),
           ("parallelSimLink", show (parallelSimLink flags)),
+          ("passThroughAssertions", show (passThroughAssertions flags)),
+          ("preprocessOnly", show (preprocessOnly flags)),
           ("printFlags", show (printFlags flags)),
           ("printFlagsHidden", show (printFlagsHidden flags)),
           ("printFlagsRaw", show (printFlagsRaw flags)),
           ("promoteWarnings", show (promoteWarnings flags)),
           ("readableMux", show (readableMux flags)),
-          ("redStepsWarnInterval", show (redStepsWarnInterval flags)),
           ("redStepsMaxIntervals", show (redStepsMaxIntervals flags)),
+          ("redStepsWarnInterval", show (redStepsWarnInterval flags)),
           ("relaxMethodEarliness", show (relaxMethodEarliness flags)),
+          ("removeCReg", show (removeCReg flags)),
+          ("removeCross", show (removeCross flags)),
           ("removeEmptyRules", show (removeEmptyRules flags)),
           ("removeFalseRules", show (removeFalseRules flags)),
           ("removeInoutConnect", show (removeInoutConnect flags)),
           ("removePrimModules", show (removePrimModules flags)),
-          ("removeStarvedRules", show (removeStarvedRules flags)),
-          ("removeCReg", show (removeCReg flags)),
-          ("removeReg", show (removeReg flags)),
           ("removeRWire", show (removeRWire flags)),
-          ("removeCross", show (removeCross flags)),
+          ("removeReg", show (removeReg flags)),
+          ("removeStarvedRules", show (removeStarvedRules flags)),
           ("removeUnusedMods", show (removeUnusedMods flags)),
+          ("removeVerilogDollar", show (removeVerilogDollar flags)),
+          ("resetName", show (resetName flags)),
           ("resource", show (resource flags)),
           ("rstGate", show (rstGate flags)),
           ("ruleNameCheck", show (ruleNameCheck flags)),
@@ -1881,35 +1902,39 @@ showFlagsRaw flags =
           ("showElabProgress", show (showElabProgress flags)),
           ("showIESyntax", show (showIESyntax flags)),
           ("showISyntax", show (showISyntax flags)),
-          ("showRangeConflict", show (showRangeConflict flags)),
           ("showModuleUse", show (showModuleUse flags)),
+          ("showRangeConflict", show (showRangeConflict flags)),
           ("showSchedule", show (showSchedule flags)),
           ("showStats", show (showStats flags)),
           ("showUpds", show (showUpds flags)),
+          ("showVersion", show (showVersion flags)),
+          ("simplifyCSyntax", show (simplifyCSyntax flags)),
           ("strictMethodSched", show (strictMethodSched flags)),
           ("suppressWarnings", show (suppressWarnings flags)),
           ("synthesize", show (synthesize flags)),
           ("systemVerilogTasks", show (systemVerilogTasks flags)),
+          ("tclShowHidden", show (tclShowHidden flags)),
           ("testAssert", show (testAssert flags)),
           ("timeStamps", show (timeStamps flags)),
-          ("showVersion", show (showVersion flags)),
+          ("unsafeAlwaysRdy", show (unsafeAlwaysRdy flags)),
+          ("unSpecTo", show (unSpecTo flags)),
           ("updCheck", show (updCheck flags)),
           ("useNegate", show (useNegate flags)),
           ("usePrelude", show (usePrelude flags)),
           ("useProvisoSAT", show (useProvisoSAT flags)),
           ("v95", show (v95 flags)),
-          ("vdir", show (vdir flags)),
-          ("verilogFilter", show (verilogFilter flags)),
-          ("vPathRaw", show (vPathRaw flags)),
+          ("vFlags", show (vFlags flags)),
           ("vPath", show (vPath flags)),
-          ("vpp", show (vpp flags)),
-          ("vsim", show (vsim flags)),
+          ("vPathRaw", show (vPathRaw flags)),
+          ("vdir", show (vdir flags)),
           ("verbose", show (verbose flags)),
           ("verilogDeclareAllFirst", show (verilogDeclareAllFirst flags)),
+          ("verilogFilter", show (verilogFilter flags)),
+          ("vpp", show (vpp flags)),
+          ("vsim", show (vsim flags)),
           ("warnActionShadowing", show (warnActionShadowing flags)),
           ("warnMethodUrgency", show (warnMethodUrgency flags)),
-          ("warnUndetPred", show (warnUndetPred flags)),
-          ("vFlags", show (vFlags flags))
+          ("warnUndetPred", show (warnUndetPred flags))
          ]
         in "Flags {\n" ++
                (intercalate ",\n" (map render fields)) ++

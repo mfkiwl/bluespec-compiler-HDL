@@ -11,7 +11,7 @@
 [Documentation]:  https://img.shields.io/badge/docs-Manual-orange.svg?logo=markdown
 [License]:        https://img.shields.io/badge/license-BSD%203-blueviolet.svg
 [Version]:        https://img.shields.io/badge/release-2020.02,%20"Open%20Source%20Release"-red.svg?logo=v
-[Build Status]:   https://github.com/b-lang-org/bsc/workflows/CI/badge.svg?branch=master&event=push
+[Build Status]:   https://github.com/b-lang-org/bsc/workflows/CI/badge.svg?branch=main&event=push
 
 <strong>
   <a href="https://github.com/B-Lang-org/bsc">Homepage</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="https://github.com/B-Lang-org/bsc">Get Started</a>
@@ -42,24 +42,48 @@ The Bluespec compiler `bsc` emits standard Verilog for maximum compatibility
 with any synthesis toolchain and comes with an included simulator ("bluesim"),
 standard library, and TCL scripting support ("bluetcl").
 
-> **NOTE**: The current release is minimal, and more code will
-> be made available in the future, including:
->
-> - Test suite
-> - Documentation (User Guide)
-> - Graphical development environment
->
-> The repository is still evolving. We welcome your feedback, issue reports,
-> and pull requests.
+The repository is still evolving. We welcome your feedback, issue reports,
+and pull requests.
 
-A separate repository, [bsc-contrib](https://github.com/B-Lang-org/bsc-contrib),
+A separate repository, [bsc-contrib],
 exists for sharing libraries and utilities that don't (or don't yet) belong in
 the core tools.
+
+A graphical environment for using BSC is available in a separate [bdw]
+repository. BDW (the BSC Development Workstation) provides a number of
+tools, including the ability to view simulation waveforms as
+source-level values.
 
 [Bluespec Inc]: https://bluespec.com
 [Flute]: https://github.com/bluespec/Flute
 [Piccolo]: https://github.com/bluespec/Piccolo
 [Shakti]: https://shakti.org.in
+
+[bsc-contrib]: https://github.com/B-Lang-org/bsc-contrib
+[bdw]: https://github.com/B-Lang-org/bdw
+
+---
+
+## Community
+
+To receive announcements about BSC and related projects, subscribe to
+[b-lang-announce@groups.io](https://groups.io/g/b-lang-announce).
+
+For questions and discussion about BSC source, subscribe to the
+developers' mailing list [bsc-dev@groups.io](https://groups.io/g/bsc-dev).
+
+For any questions or discussion about Bluespec HDLs, using BSC, or
+related projects, subscribe to [b-lang-discuss@groups.io](https://groups.io/g/b-lang-discuss).
+
+IRC users might try joining the `#bluespec` channel on [FreeNode](https://freenode.net).
+
+There's also a [bluespec](https://stackoverflow.com/questions/tagged/bluespec)
+tag on StackOverflow.
+
+And we've enabled the [Discussions](https://github.com/B-Lang-org/bsc/discussions)
+tab in this GitHub repo.
+This is a new feature to support discussion within the project itself.
+Feel free to give it a try and see if it can be useful to our community.
 
 ---
 
@@ -165,6 +189,17 @@ The `check` target runs a test using an external Verilog simulator, which is
 
 [Icarus Verilog]: http://iverilog.icarus.com
 
+The `install-doc` target builds PDF documentation from LaTeX source files
+that rely on a few standard style files.  The following Debian/Unbuntu
+packages install sufficient tools to build the documentation:
+
+    $ apt-get install \
+        texlive-latex-base \
+        texlive-latex-recommended \
+        texlive-latex-extra \
+        texlive-font-utils \
+        texlive-fonts-extra
+
 ### Clone the repository
 
 Clone this repository by running:
@@ -182,7 +217,7 @@ the submodules later with a separate command:
 
 At the root of the repository:
 
-    $ make all
+    $ make install
     $ make check
 
 This will create a directory called `inst` containing an installation of the
@@ -201,6 +236,9 @@ An unoptimized, debug, or profiling build can be done using one of:
     $ make BSC_BUILD=DEBUG
     $ make BSC_BUILD=PROF
 
+For more extensive testing, see the [testsuite README](testsuite/README.md)
+in the `testsuite` subdirectory.
+
 #### Choosing a Verilog simulator
 
 The Makefile in `examples/smoke_test` shows how you can point the default
@@ -212,6 +250,16 @@ Verilog -- but you must write your own C++ harness for your design in order to
 use it.
 
 [Verilator]: https://www.veripool.org/wiki/verilator
+
+### Build documentation
+
+To build and install the PDF documentation, you can add the following:
+
+    $ make install-doc
+
+This will install into the same `inst` or `PREFIX` directory.
+The installed documents include the BSC User Guide and the BSC Libraries
+Reference Guide.
 
 ---
 
@@ -240,13 +288,16 @@ following command:
     $ bsc -help-hidden
 
 More details on using BSC, Bluesim, and Bluetcl can be found in the User Guide
-(forthcoming). Training and tutorials can be found in the [BSVlang
-repository](https://github.com/BSVLang/Main).
+(built in this repository).
+Training and tutorials can be found in the
+[BSVlang repository](https://github.com/BSVLang/Main).
 
 ---
 
 ## License
 
-The Bluespec toolchain is available under the BSD license. The source code also
-includes several other components under various license agreements (all of it
-open/copyleft software). See `COPYING` for copyright and license details.
+The Bluespec toolchain is provided by [Bluespec Inc] and
+available under the BSD-3-Clause license.
+The source code also includes several other components under
+various license agreements (all of it open/copyleft software).
+See [`COPYING`](COPYING) for copyright and license details.

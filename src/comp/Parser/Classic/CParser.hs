@@ -343,14 +343,16 @@ pIfcPrags  = l L_lpragma ..+  pIfcPragmas `sepBy` cm +.. l L_rpragma `into`
                   (\a -> succeed $  (concat a))
                   ||! succeed []
 
+prefix :: CParser ()
+prefix = literal (mkFString "prefixs") ||| literal (mkFString "prefix")
 
 pIfcPragmas :: CParser [IfcPragma]
 pIfcPragmas =
     -- arg_name = [id,id]
     literal (mkFString "arg_names") ..+ eq ..+ lb ..+  pFieldId `sepBy` cm +.. rb `into`
                 (\a -> succeed $  [(PIArgNames a)])
-    -- prefixes = [ (id,"str"), ...]
-    ||!  literal (mkFString "prefixs") ..+ eq ..+ varString
+    -- prefix = "str"
+    ||!  prefix ..+ eq ..+ varString
              `into` (\x  -> succeed $  [(PIPrefixStr x)])
     -- readys = = [ (id,"str"), ...]
     ||!  literal (mkFString "ready" )  ..+ eq ..+ varString
@@ -482,11 +484,13 @@ pDataB b = l L_data ..+ pTyConIdK +.+ many pTyVarId +.+ eql b +.+ sepBy1 pSumman
                 getTs (constr_names, Left ts) =
                     COriginalSummand { cos_names = constr_names,
                                        cos_tag_encoding = Nothing,
-                                       cos_arg_types = ts }
+                                       cos_arg_types = ts,
+                                       cos_field_names = Nothing }
                 getTs (constr_names, Right its) =
                     COriginalSummand { cos_names = constr_names,
                                        cos_tag_encoding = Nothing,
-                                       cos_arg_types = map snd its }
+                                       cos_arg_types = map snd its,
+                                       cos_field_names = Just $ map fst its }
                 isLeft (Left _) = True
                 isLeft (Right _) = False
 

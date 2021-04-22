@@ -1284,23 +1284,24 @@ instance Bin TyCon where
 
 instance Bin TISort where
     writeBytes (TItype i t)     = do putI 0; toBin i; toBin t
-    writeBytes (TIdata is)      = do putI 1; toBin is
+    writeBytes (TIdata is enum) = do putI 1; toBin is; toBin enum
     writeBytes (TIstruct su is) = do putI 2; toBin su; toBin is
     writeBytes (TIabstract)     = do putI 3
     readBytes = do
         i <- getI
         case i of
           0 -> do i <- fromBin; t <- fromBin; return (TItype i t)
-          1 -> do is <- fromBin; return (TIdata is)
+          1 -> do is <- fromBin; enum <- fromBin; return (TIdata is enum)
           2 -> do su <- fromBin; is <- fromBin; return (TIstruct su is)
           3 -> return TIabstract
           n -> internalError $ "BinData.Bin(TISort).readBytes: " ++ show n
 
 instance Bin StructSubType where
-    writeBytes SStruct         = putI 0
-    writeBytes SClass          = putI 1
-    writeBytes (SDataCon i nm) = do putI 2 ; toBin i; toBin nm
-    writeBytes (SInterface ps) = do putI 3 ; toBin ps
+    writeBytes SStruct           = putI 0
+    writeBytes SClass            = putI 1
+    writeBytes (SDataCon i nm)   = do putI 2 ; toBin i; toBin nm
+    writeBytes (SInterface ps)   = do putI 3 ; toBin ps
+    writeBytes (SPolyWrap i c f) = do putI 4; toBin i; toBin c; toBin f
     readBytes = do
         i <- getI
         case i of
@@ -1308,6 +1309,7 @@ instance Bin StructSubType where
           1 -> return SClass
           2 -> do i  <- fromBin ; nm <- fromBin; return (SDataCon i nm)
           3 -> do ps <- fromBin ; return (SInterface ps)
+          4 -> do i <- fromBin; c <- fromBin; f <- fromBin; return (SPolyWrap i c f)
           n -> internalError $ "BinData.Bin(StructSubType).readBytes: " ++ show n
 
 instance Bin Kind where

@@ -1,10 +1,42 @@
-# name spaces for bluetcl commands and for this command
-# facility for calling procedures on exit
+# bluetcl initialization
+#
+# * Add the Bluetcl tcllib to the tcl search path
+# * Source the user's $tcl_rcFileName (as set up by bluetcl)
+# * Add a facility for calling procedures on exit
+# * Set up name spaces for bluetcl commands
+#
+
+# -------------------------
+# Tcl search paths
+
+# Additional user-specified libraries
+if {[info exist env(BLUETCLLIBPATH)]} {
+    foreach __dir $env(BLUETCLLIBPATH) {
+        if {[lsearch -exact $auto_path $__dir] < 0} {
+            lappend auto_path $__dir
+        }
+    }
+}
+
+# Libraries supplied with Bluetcl
+foreach __dir "$env(BLUESPECDIR)/tcllib/bluespec" {
+    if {[lsearch -exact $auto_path $__dir] < 0} {
+        lappend auto_path $__dir
+    }
+}
+
+unset __dir
+
+# -------------------------
+# Platform variables
 
 namespace eval ::Bluetcl {
     variable w32or64 [expr 8*$::tcl_platform(pointerSize)]
     variable kernelname [string tolower $::tcl_platform(os)]
 }
+
+# -------------------------
+# AtExit
 
 namespace eval AtExit {
     variable atExitScripts [list]
@@ -33,6 +65,7 @@ proc exit {{code 0}} {
 
 # namespace import AtExit::atExit
 
+# -------------------------
 
 # Procedure called during initialization
 proc Bluetcl::initBluespec {} {
@@ -90,6 +123,8 @@ proc Bluetcl::initBluespec {} {
     }
 }
 
+# -------------------------
+
 # Force the loading of the utils package.
 utils::donothing
 lappend auto_path /usr/share
@@ -119,3 +154,5 @@ namespace eval ::Bluetcl {
     namespace export version
 
 }
+
+# -------------------------

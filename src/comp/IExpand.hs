@@ -968,8 +968,7 @@ iExpandIface modId clkRst (P pi e@(IAps c@(ICon _ (ICTuple { fieldIds = fs0 })) 
 
         return $ concat (clock_xs ++ reset_xs ++ method_xs)
 
--- XXX is this a good idea?
-iExpandIface _ _ (P pi (ICon _ (ICUndet { }))) | pi == pTrue =
+iExpandIface _ _ (P pi (ICon _ (ICTuple { fieldIds = [] }))) | pi == pTrue =
     do -- need to make sure the map is made!
        makeDomainToBoundaryIdsMap
        return []
@@ -2138,8 +2137,8 @@ evalBufferMode e = do
         0 -> return NoBuffering
         1 -> return LineBuffering
         _ -> internalError("evalBufferMode: PrimChr: " ++ ppReadable n)
-    IAps (ICon _ (ICCon { conNo = n })) _ [e_mdata] ->
-      case n of
+    IAps (ICon _ (ICCon { conTagInfo = cti })) _ [e_mdata] ->
+      case (conNo cti) of
         0 -> return NoBuffering
         1 -> return LineBuffering
         2 -> do me_data <- evalMaybe e_mdata
@@ -2148,7 +2147,7 @@ evalBufferMode e = do
                          Just e_data -> do sz <- evalInt e_data
                                            return (Just sz)
                 return $ BlockBuffering msz
-        _ -> internalError("evalBufferMode: ICCon: " ++ ppReadable n)
+        _ -> internalError("evalBufferMode: ICCon: " ++ ppReadable cti)
     _ -> nfError "evalBufferMode" e'
 
 evalMaybe :: HExpr -> G (Maybe HExpr)
@@ -2160,11 +2159,11 @@ evalMaybe e = do
       case n of
         0 -> return Nothing
         _ -> internalError("evalMaybe: PrimChr: " ++ ppReadable n)
-    IAps (ICon _ (ICCon { conNo = n })) _ [e_data] ->
-      case n of
+    IAps (ICon _ (ICCon { conTagInfo = cti })) _ [e_data] ->
+      case (conNo cti) of
         0 -> return Nothing
         1 -> return (Just e_data)
-        _ -> internalError("evalMaybe: ICCon: " ++ ppReadable n)
+        _ -> internalError("evalMaybe: ICCon: " ++ ppReadable cti)
     _ -> nfError "evalMaybe" e'
 
 evalInt :: HExpr -> G Int
@@ -3095,14 +3094,14 @@ conAp' _ (ICReset { })      e as = bldApUH' "ICReset" e as
 conAp' _ (ICInout { })      e as = bldApUH' "ICInout" e as
 
 -- Data types
-conAp' _ (ICIs { conNo = n, numCon = s }) i as =
+conAp' _ (ICIs { conTagInfo = cti }) i as =
     case dropT as of
       [ E e ] -> do
           let tys = takeT as
               ty = itBit1
-          evalStaticOp' True True False e ty (doIs i tys n s)
+          evalStaticOp' True True False e ty (doIs i tys cti)
       _ -> internalError ("conAp': ICIs: " ++ ppReadable (mkAp i as))
-conAp' c (ICOut { iConType = outty, conNo = n }) o as =
+conAp' c (ICOut { iConType = outty, conTagInfo = cti }) o as =
     case dropT as of
       E e : as' -> do
           let tys = takeT as
@@ -3113,7 +3112,7 @@ conAp' c (ICOut { iConType = outty, conNo = n }) o as =
               toHeapArg a = return a
           as'' <- mapM toHeapArg as'
 -}
-          evalStaticOp' True True False e resType (doOut o c tys ty n as')
+          evalStaticOp' True True False e resType (doOut o c tys ty cti as')
       _ -> internalError ("conAp': ICOut: " ++ ppReadable (mkAp o as))
 conAp' c (ICSel { iConType = selty, selNo = n }) sel as =
     case dropT as of
@@ -3134,9 +3133,10 @@ conAp' c (ICSel { iConType = selty, selNo = n }) sel as =
 -- turn all unit-argument / no-argument constructiors into PrimChr
 -- this is safe because the difference is not observable, and it helps with
 -- improveIf
-conAp' i (ICCon ict conNo numCon) _ as | hasNoArg =
-    evalAp "ICCon Enum" icPrimChr (T (mkNumConT (log2 numCon)) :  T resultType :  E bitExpr : as')
-  where bitExpr    = mkAp icPrimIntegerToBit [T (mkNumConT (log2 numCon)), E (iMkLit itInteger conNo)]
+conAp' i (ICCon ict cti) _ as | hasNoArg =
+    evalAp "ICCon Enum" icPrimChr (T sizeNum :  T resultType :  E bitExpr : as')
+  where sizeNum    = mkNumConT (tagSize cti)
+        bitExpr    = mkAp icPrimIntegerToBit [T sizeNum, E (iMkLit itInteger (conTag cti))]
         (hasNoArg, resultType, argsToDrop) =
             case (itGetArrows (itInst ict (takeT as))) of
                      ([t], resultType) | t == itPrimUnit -> (True, resultType, 1)
@@ -3343,8 +3343,8 @@ conAp' _ (ICPrim _ PrimGetModuleName) _ as = internalError ("PrimGetModuleName "
 -- ord _  -->  _
 conAp' _ (ICPrim _ PrimOrd) o [T f, T sz, E e] = evalStaticOp e (aitBit sz) handleOrd
   where handleOrd (IAps (ICon _ (ICPrim _ PrimChr)) _ [e']) = eval1 e'
-        handleOrd (IAps (ICon _ (ICCon { conNo = n})) _ _) =
-            return $ pExpr $ iMkLitAt (getIExprPosition e) (aitBit sz) n
+        handleOrd (IAps (ICon _ (ICCon { conTagInfo = cti })) _ _) =
+            return $ pExpr $ iMkLitAt (getIExprPosition e) (aitBit sz) (conTag cti)
         handleOrd e' = nfError "primOrd" e'
 
 -- chr (ord e)  -->  e
@@ -4347,8 +4347,8 @@ improveIf f t cnd
 -}
 
 -- push if improvement inside matching constructors
-improveIf f t cnd (IAps (ICon i1 c1@(ICCon {conNo = n1})) ts1 es1)
-                  (IAps (ICon i2 c2@(ICCon {conNo = n2})) ts2 es2) | n1 == n2
+improveIf f t cnd (IAps (ICon i1 c1@(ICCon {conTagInfo = cti1})) ts1 es1)
+                  (IAps (ICon i2 c2@(ICCon {conTagInfo = cti2})) ts2 es2) | conNo cti1 == conNo cti2
                                                            -- need to check that constructor numbers match
                                                            -- because that test is otherwise buried in i1 == i2
                                                            = do
@@ -4372,30 +4372,46 @@ improveIf f t cnd (IAps (ICon i1 c1@(ICTuple {})) ts1 es1)
   -- unambiguous improvement since the ICTuple has propagated out
   return ((IAps (ICon i1 c1) ts1 es'), True)
 
+-- push if improvement inside bit concatenations with matching boundaries
+-- this is a post-pack version of the struct/tuple case above
+improveIf f t cnd thn@(IAps concat@(ICon _ (ICPrim _ PrimConcat)) ts1@[ITNum sx, ITNum sy, _] [thn_x, thn_y])
+                  els@(IAps        (ICon _ (ICPrim _ PrimConcat)) ts2                         [els_x, els_y])
+  | ts1 == ts2 = do
+  when doTraceIf $ traceM ("improveIf PrimConcat triggered " ++ ppReadable (cnd,thn,els))
+  (x', _) <- improveIf f (itBitN sx) cnd thn_x els_x
+  (y', _) <- improveIf f (itBitN sy) cnd thn_y els_y
+  return (IAps concat ts1 [x', y'], True)
+
 improveIf f t cnd thn@(IAps chr@(ICon _ (ICPrim _ PrimChr)) ts1 [chr_thn])
                   els@(IAps     (ICon _ (ICPrim _ PrimChr)) ts2 [chr_els]) = do
   when doTraceIf $ traceM ("improveIf PrimChr triggered " ++ show (cnd,thn,els))
   let chrArgType = iGetType chr_thn
   (e', _) <- improveIf f chrArgType cnd chr_thn chr_els
   return (IAps chr ts1 [e'], True)
-improveIf f t cnd thn@(IAps chr@(ICon _ (ICPrim _ PrimChr)) ts1 [chr_thn])
-                  els@(ICon _ (ICUndet { iuKind = u })) = do
-  when doTraceIf $ traceM ("improveIf PrimChr/Undet triggered " ++ show (cnd,thn,els))
-  let chrArgType = iGetType chr_thn
-  -- XXX or should we complain if a generated _ has an implicit condition?
-  pe_chr_els <- doBuildUndefined chrArgType (getIExprPosition els) (undefKindToInteger u) []
-  chr_els <- toHeapWHNFInferName "improve-if" (pExprToHExpr pe_chr_els)
-  (e', _) <- improveIf f chrArgType cnd chr_thn chr_els
-  return (IAps chr ts1 [e'], True)
-improveIf f t cnd thn@(ICon _ (ICUndet { iuKind = u }))
-                  els@(IAps chr@(ICon _ (ICPrim _ PrimChr)) ts1 [chr_els]) = do
-  when doTraceIf $ traceM ("improveIf Undet/PrimChr triggered " ++ show (cnd,thn,els))
-  let chrArgType = iGetType chr_els
-  -- XXX or should we complain if a generated _ has an implicit condition?
-  pe_chr_thn <- doBuildUndefined chrArgType (getIExprPosition thn) (undefKindToInteger u) []
-  chr_thn <- toHeapWHNFInferName "improve-if" (pExprToHExpr pe_chr_thn)
-  (e', _) <- improveIf f chrArgType cnd chr_thn chr_els
-  return (IAps chr ts1 [e'], True)
+-- Do not "optimize" constructors against undefined values because this can remove
+-- the conditions required to optimize chains of ifs like these:
+-- if (x == 0) 0 else if (x == 1) 1 else ... back to just x
+-- These chains are commonly produced by derived Bits instances.
+-- This covers ICCon and PrimChr because constructors of no arguments are turned into PrimChr.
+improveIf f t cnd thn els
+  | isUndet thn && blockUndet els || isUndet els && blockUndet thn = do
+      when doTraceIf $ traceM("improveIf ICCon/ICUndet blocked: " ++ ppReadable (cnd, thn, els))
+      return (mkAp f [T t, E cnd, E thn, E els], True)
+  where isCon (IAps (ICon _ (ICCon {})) _ _)         = True
+        isCon (IAps (ICon _ (ICPrim _ PrimChr)) _ _) = True
+        isCon _                                      = False
+        isUndet (ICon _ (ICUndet {})) = True
+        isUndet _                     = False
+        -- Exception: Allow undet simplification for two-constructor / Boolean-like types
+        -- because they cannot have the != chains that are problematic for other types.
+        -- This is a workaround for a small boolean optimization regression in
+        -- bsc.evaluator/prims/impcondof with this change.
+        isBoolLike (IAps (ICon _ (ICCon { conTagInfo = cti })) _ _)  = numCon cti == 2 &&
+                                                                       tagSize cti == 1
+        -- A one-bit PrimChr result is also Boolean-like
+        isBoolLike (IAps (ICon _ (ICPrim _ PrimChr)) (ITNum n : _) _) = n == 1
+        isBoolLike _ = False
+        blockUndet e = isCon e && not (isBoolLike e)
 
 improveIf f t cnd thn@(IAps ssp@(ICon _ (ICPrim _ PrimSetSelPosition)) ts1 [pos_thn, res_thn])
                   els@(IAps     (ICon _ (ICPrim _ PrimSetSelPosition)) ts2 [pos_els, res_els])
@@ -4416,9 +4432,16 @@ improveIf f t cnd thn@(IAps ssp@(ICon _ (ICPrim _ PrimSetSelPosition)) ts1 [pos_
 -- mildly duplicates some work in doIf (isUndet thn)
 -- but the overlapping work for els has been moved here
 improveIf f t cnd thn els | ICon _ (ICUndet { iuKind = u }) <- thn,
-                            u == UNoMatch || u == UNotUsed || isSimpleType t = return (els, True)
+                            improveIfUndet u t = do
+  let info = show thn ++ "\n" ++ ppReadable (cnd, thn, els)
+  when doTraceIf $ traceM ("improveIf Undet (then) triggered " ++ info)
+  return (els, True)
 improveIf f t cnd thn els | ICon _ (ICUndet { iuKind = u }) <- els,
-                            u == UNoMatch || u == UNotUsed || isSimpleType t = return (thn, True)
+                            improveIfUndet u t = do
+  let info = show els ++ "\n" ++ ppReadable (cnd, thn, els)
+  when doTraceIf $ traceM ("improveIf Undet (els) triggered " ++ info)
+  return (thn, True)
+
 improveIf f t cnd thn els = do
   when doTrans $ traceM ("improveIf: iTransform fallthrough: " ++ ppReadable (cnd, thn, els))
   errh <- getErrHandle
@@ -4430,6 +4453,14 @@ improveIf f t cnd thn els = do
                 -- XXX the above is just a convoluted way of writing this?
                 -- (IAps f [t] [cnd, thn, els], False)
 
+improveIfUndet :: UndefKind -> IType -> Bool
+-- Always drop types that can survive downstream, but can't have don't cares
+-- (Integer, String, Real, etc)
+improveIfUndet _         t | isSimpleType t = True
+-- Never remove a user-inserted don't care
+improveIfUndet UDontCare _ = False
+-- Removing undefined bits gets in the way of pack . unpack optimization
+improveIfUndet _         t = not $ isBitType t
 
 -- simplify evaluated dyn-sel expressions, not just to reduce the order of
 -- growth of elaboration, but also to avoid triggering elaboration errors
@@ -4468,10 +4499,10 @@ improveDynSel ic idx_e idx_sz arr_i arr_ty arr_bounds elem_es =
         -- XXX don't pull things out of the sel/array if other code is
         -- XXX pushing them in! check which things get pushed;
         -- XXX maybe all we want to do is check when the arms are the same?
-        (IAps (ICon i0 c0@(ICCon { conNo = n0})) ts0 es0) ->
+        (IAps (ICon i0 c0@(ICCon { conTagInfo = cti})) ts0 es0) ->
             -- check if all the arms have the same constructor
             -- (allowing for some to be ICUndet?)
-            ... (n == n0) ...
+            ... (n == conNo cti) ...
         (IAps (ICon i0 c0@(ICTuple {})) ts0 es0) ->
             -- check if they're all ICTuple (allowing for ICUndet?)
             -- (since they're the same type, they'll be the same tuple)
@@ -4550,21 +4581,21 @@ doOr2 f as pe = internalError("IExpand.doOr : " ++ ppReadable f ++ ppReadable as
 
 -----------------------------------------------------------------------------
 
-doIs :: HExpr -> [IType] -> Integer -> Integer ->
+doIs :: HExpr -> [IType] -> ConTagInfo ->
         HExpr -> (HPred,  HExpr) -> G PExpr
-doIs is tys n s ee (p, e) =
+doIs is tys cti ee (p, e) =
     case e of
         -- C? (C' e)  -->  True/False
-        IAps (ICon _ (ICCon { conNo = n' })) _ [_] ->
+        IAps (ICon _ (ICCon { conTagInfo = cti' })) _ [_] ->
             addPredG p $
-            return $ if n == n' then pExpr iTrue else pExpr iFalse
+            return $ pExpr $ iMkBool (conNo cti == conNo cti')
 
-        -- C_n? (primChr e) --> e == n
+        -- C_n? (primChr e) --> e == conTag
         IAps (ICon _ (ICPrim _ PrimChr)) [sz,_] [e] ->
             addPredG p $
             eval1 (iePrimEQ sz e n_lit)
           where pos = getIExprPosition e
-                n_lit = iMkLitAt pos (aitBit sz) n
+                n_lit = iMkLitAt pos (aitBit sz) (conTag cti)
 
         -- C_n? _  -->  False
         ICon _ (ICUndet { }) -> addPredG p $ return $ pExpr iFalse
@@ -4575,13 +4606,13 @@ doIs is tys n s ee (p, e) =
         -- otherwise fail
         _ -> internalError ("doIs: " ++ ppReadable (is, e))
 
-doOut :: HExpr -> Id -> [IType] -> IType -> Integer -> [Arg] ->
+doOut :: HExpr -> Id -> [IType] -> IType -> ConTagInfo -> [Arg] ->
          HExpr -> (HPred, HExpr) -> G PExpr
-doOut out c tys ty n as ee (p, e) =
+doOut out c tys ty cti as ee (p, e) =
     case e of
         -- outC (C e)  -->  e / _   (not error, because it's "convenient" -- L)
-        IAps (ICon _ (ICCon { conNo = n' })) _ [e'] ->
-            if n == n'
+        IAps (ICon _ (ICCon { conTagInfo = cti' })) _ [e'] ->
+            if conNo cti == conNo cti'
             then addPredG p $ evalAp "outC C" e' as
             else addPredG p $
                  evalAp "out-1" (icUndet ty UNotUsed) as
@@ -4744,6 +4775,7 @@ isIntLit _ = False
 
 evalCExpr :: String -> CExpr -> CType -> [Arg] -> G PExpr
 evalCExpr tag ce ct as = do
+  --traceM("evalCExpr " ++ tag ++ "; ce: " ++ show ce ++ "; ct: " ++ show ct ++ "; as: " ++ show as)
   flags <- getFlags
   r <- getSymTab
   let err_tag = "evalCExpr " ++ tag
@@ -4758,6 +4790,8 @@ evalCExpr tag ce ct as = do
       errh <- getErrHandle
       flags <- getFlags
       let ie = iConvExpr errh flags r env ce'
+      --traceM(err_tag ++ "; ce': " ++ ppReadable ce')
+      --traceM(err_tag ++ "; ie: " ++ ppReadable ie)
       evalAp tag ie as
 
 doBuildUndefined :: IType -> Position -> Integer -> [Arg] -> G PExpr

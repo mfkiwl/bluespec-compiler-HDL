@@ -685,13 +685,12 @@ data ErrMsg =
 
         | ECannotDerive String
         | EDeriveCtx String
-        | EDeriveRecursive [String] String
         | ETypeSynRecursive [String]
         | EDuplicateInstance String Position
         | EBadInstanceOverlap String String Position
 
         | EUndefinedTask String
-        | EUnboundCon String
+        | EUnboundCon String (Maybe String)
         | EUnboundVar String
         | EUnboundField String
         | EUnboundClCon String
@@ -1880,8 +1879,13 @@ getErrorText (EDeriveCtx s) =
 
 getErrorText (EUndefinedTask c) =
     (Type 2, empty, s2par ("Unsupported system task " ++ ishow c))
-getErrorText (EUnboundCon c) =
-    (Type 3, empty, s2par ("Unbound constructor " ++ ishow c))
+getErrorText (EUnboundCon c maybeSuggest) =
+    (Type 3, empty,
+     let intro_msg = "Unbound constructor " ++ ishow c
+         msg = case maybeSuggest of
+           Nothing -> intro_msg
+           Just fname -> intro_msg ++ ".  Perhaps " ++ quote fname ++ " is missing?"
+     in s2par msg)
 getErrorText (EUnboundVar c) =
     (Type 4, empty, s2par ("Unbound variable " ++ ishow c))
 getErrorText (EUnboundField c) =
@@ -2496,15 +2500,8 @@ getErrorText (EForeignFuncBadResType badtype isPoly) =
                  else empty
      in  hdr $$ nest 2 (text badtype))
 
-getErrorText (EDeriveRecursive classes ty) =
-    (Type 90, empty,
-     s2par ("Cannot derive instances for the recursive type " ++ ty ++
-            " because the requested " ++
-             cls_msg ++ " not permit recursive instances."))
-  where cls_msg = case classes of
-                   [cls]   -> " typeclass " ++ cls ++ " does "
-                   (_ : _) -> " typeclasses (" ++ (intercalate ", " classes) ++ ") do "
-                   [] -> internalError "EDeriveRecursive no classes"
+-- Removed Type 90, EDeriveRecursive since recursive deriving of Bits
+-- now causes an ERecursiveBits error at the type checking phase.
 
 getErrorText (EForeignFuncDuplicates link_name src_ids) =
     (Type 91, empty,

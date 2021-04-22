@@ -112,7 +112,9 @@ data TyCon = -- | A constructor for a type of value kind
 data TISort
         = -- type synonym
           TItype Integer Type
-        | TIdata [Id]
+        | TIdata { tidata_cons :: [Id]
+                 , tidata_enum :: Bool
+                 }
         | TIstruct StructSubType [Id]
           -- primitive abstract type
           -- e.g. Integer, Bit, Module, etc.
@@ -123,8 +125,14 @@ data TISort
 data StructSubType
         = SStruct
         | SClass
-        | SDataCon Id Bool -- True if fields are named, False if anonymous.
+        | SDataCon { sdatacon_id :: Id
+                   , sdatacon_named_fields :: Bool
+                   }
         | SInterface [IfcPragma]
+        | SPolyWrap { spolywrap_id :: Id         -- ^ name of the type with the wrapped field
+                    , spolywrap_ctor :: Maybe Id -- ^ name of the data constructor
+                    , spolywrap_field :: Id      -- ^ name of the wrapped field
+                    }
         deriving (Eq, Ord, Show, Generic.Data, Generic.Typeable)
 
 type CType = Type
@@ -573,13 +581,13 @@ instance Hyper PartialKind where
 
 instance PPrint TISort where
     pPrint d p (TItype n t) = pparen (p>0) $ text "TItype" <+> pPrint d 0 n <+> pPrint d 1 t
-    pPrint d p (TIdata is) = pparen (p>0) $ text "TIdata" <+> pPrint d 1 is
+    pPrint d p (TIdata is enum) = pparen (p>0) $ text (if enum then "TIdata (enum)" else "TIdata") <+> pPrint d 1 is
     pPrint d p (TIstruct ss is) = pparen (p>0) $ text "TIstruct" <+> pPrint d 1 ss <+> pPrint d 1 is
     pPrint d p (TIabstract) = text "TIabstract"
 
 instance Hyper TISort where
     hyper (TItype i t) y = hyper2 i t y
-    hyper (TIdata is) y = hyper is y
+    hyper (TIdata is enum) y = hyper2 is enum y
     hyper (TIstruct ss is) y = hyper2 ss is y
     hyper (TIabstract) y = y
 

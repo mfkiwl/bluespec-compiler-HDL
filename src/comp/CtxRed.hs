@@ -4,8 +4,8 @@ import Data.List(partition, (\\))
 import Control.Monad(when)
 import PFPrint
 import Id
-import PreIds(tmpTyVarIds)
-import Error(internalError, EMsg, ErrorHandle, bsError)
+import PreIds(tmpTyVarIds, idGeneric)
+import Error(internalError, EMsg, ErrorHandle, bsWarning, bsError, ErrMsg(WExperimental))
 import Flags(Flags)
 import CSyntax
 import Type
@@ -26,18 +26,21 @@ doTraceCtxReduce :: Bool
 doTraceCtxReduce = "-trace-ctxreduce" `elem` progArgs
 
 cCtxReduceIO :: ErrorHandle -> Flags -> SymTab -> CPackage -> IO CPackage
-cCtxReduceIO errh flags s (CPackage mi exps imps fixs ds includes) =
-    -- ctxreduce should not match incoherent instances
-    -- this will preserve contexts to be handled in typechecking
-    case fst (runTI flags False s (mapM ctxRed ds)) of
-    -- XXX This assumes no warnings in the Left case!  If we want to handle errors and
-    -- warnings better, return an ErrorMonad.
-    Left msgs -> bsError errh msgs
-    Right ds' -> return (CPackage mi exps imps fixs ds' includes)
+cCtxReduceIO errh flags s (CPackage mi exps imps fixs ds includes) = do
+    -- The False argument to 'runTI' indicates that incoherent instances should not be matched at this time
+    -- We want to preserve those contexts to be handled in typecheck (XXX why?)
+    let (res, wmsgs) = runTI flags False s (mapM ctxRed ds)
+    when (not (null wmsgs)) $ bsWarning errh wmsgs
+    case res of
+      Left emsgs -> bsError errh emsgs
+      Right ds' -> return (CPackage mi exps imps fixs ds' includes)
 
 cCtxReduceDef :: Flags -> SymTab -> CDefn -> Either [EMsg] CDefn
 cCtxReduceDef flags s def =
-    -- see comment in cCtxReduceIO
+    -- XXX This assumes no warnings in the Left case!  If we want to handle errors and
+    -- warnings better, return an ErrorMonad.
+    -- The False argument to 'runTI' indicates that incoherent instances should not be matched at this time
+    -- We want to preserve those contexts to be handled in typecheck (XXX why?)
     case fst (runTI flags False s (ctxRed def)) of
     Left msgs -> Left msgs
     Right t   -> Right t
@@ -364,6 +367,13 @@ ctxRedCQType = ctxRedCQType' False
 ctxRedCQType' :: Bool -> CQType -> TI (Subst, CQType)
 ctxRedCQType' isInstHead cqt = do
 
+    -- raise an experimental warning about uses of generics
+    let CQType cqs _ = cqt
+    case [p | p@(CPred {cpred_tc = CTypeclass i}) <- cqs,
+          qualEq i idGeneric] of
+      p : _ -> twarn (getPosition p, WExperimental "generics")
+      [] -> return ()
+
     -- find out what variables were bound prior to here
     prev_bound_tvs <- getBoundTVs
 
@@ -400,7 +410,6 @@ ctxRedCQType' isInstHead cqt = do
     (ps, _, s) <- reducePredsAggressive (Just dvs) [] vqs
 
     let t' = apSub s t
-        ps' = apSub s ps
 
     -- don't bind any generated type variables introduced by the type-checker
     -- (to avoid possible variable capture in typecheck)
@@ -412,7 +421,7 @@ ctxRedCQType' isInstHead cqt = do
     -- should only appear in ps and t' (any the trimmed part of s)
     let s' = mkSubst [(bad_var, TVar safe_var) | (bad_var, safe_id) <- zip bad_vars safe_tyvar_ids,
                                                  let safe_var = tVarKind safe_id (kind bad_var) ]
-    let ps'' = apSub s' ps'
+    let ps' = apSub s' ps
     let t'' = apSub s' t'
     -- because of NumAlias and pseudo-constructors like SizeOf that expand into
     -- new types, some vars from s' could appear in the RHS of s,
@@ -420,9 +429,9 @@ ctxRedCQType' isInstHead cqt = do
     let s_final = trimSubst trim_point (apSubstToSubst s' s)
 
     -- push the set of tyvars bound at this level (with their inferred kinds)
-    let bvs = (tv (ps'',t'')) \\ prev_bound_tvs
+    let bvs = (tv (ps',t'')) \\ prev_bound_tvs
     addBoundTVs bvs
-    let cqt' = CQType (map (predToCPred . toPred) ps'') t''
+    let cqt' = CQType (map (predToCPred . toPred) ps') t''
 
     when doTraceCtxReduce $ do
        traceM ("ctxRedCQType\n")
@@ -430,8 +439,7 @@ ctxRedCQType' isInstHead cqt = do
        traceM ("ps: " ++ ppReadable ps)
        traceM ("s: " ++ ppReadable s)
        traceM ("t' :" ++ ppReadable t')
-       traceM ("ps' :" ++ ppReadable ps')
-       -- t'' and ps'' are in cqt'
+       -- t'' and ps' are in cqt'
        traceM ("s_final: " ++ ppReadable s_final)
        traceM ("cqt': " ++ ppReadable cqt')
 

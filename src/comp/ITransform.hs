@@ -877,7 +877,8 @@ iTrAp ctx e0@(ICon _ (ICPrim _ PrimEQ)) [ITNum 1] [e, ICon _ (ICInt { iVal = Int
         | i == 1    = (e, True)
         | otherwise = internalError ("conApN ==")
 
--- if b1 then c1 else if b2 then c2 else ... cn == c
+-- (if b1 then c1 else if b2 then c2 else ... cn) == c -->
+-- if b1 then (c1 == c) else if b2 then (c2 == c) ... (cn == c)
 -- (other direction is handled by the flip rule below)
 -- also can be applied to any op which has a 1-bit result
 -- (and possibly are heuristics for when it's worth applying to other ops)
@@ -984,6 +985,17 @@ iTrAp ctx p@(ICon _ (ICPrim _ PrimConcat)) ts@[s1@(ITNum i1), s2@(ITNum i2), s3@
         iTrAp2 ctx pif [itBitN i3] [cnd0, t', e']
       where t' = iTrApExp ctx p ts [t0, t1]
             e' = iTrApExp ctx p ts [e0, e1]
+
+    -- (if c thn _) ++ e --> thn ++ e
+    [IAps (ICon _ (ICPrim _ PrimIf)) _ [_, thn, els], e]
+      | isUndet thn && noRefs els -> iTrAp2 ctx p ts [els, e]
+      | isUndet els && noRefs thn -> iTrAp2 ctx p ts [thn, e]
+
+    -- e ++ (if c thn _) --> e ++ thn
+    [e, IAps (ICon _ (ICPrim _ PrimIf)) _ [_, thn, els]]
+      | isUndet thn && noRefs els -> iTrAp2 ctx p ts [e, els]
+      | isUndet els && noRefs thn -> iTrAp2 ctx p ts [e, thn]
+
     _ -> iTrApTail ctx p ts as
 
 iTrAp ctx ps@(ICon _ (ICPrim _ PrimSelect)) ts@[k@(ITNum ik), m@(ITNum im), n] [e] =
@@ -1333,6 +1345,12 @@ isUndet :: IExpr a -> Bool
 isUndet (ICon _ (ICUndet { imVal = Nothing })) = True
 isUndet _ = False
 
+-- Guard optimizations that are not valid in the presence of implicit conditions.
+noRefs :: IExpr a -> Bool
+noRefs (IRefT {})    = False
+noRefs (IAps f _ es) = all noRefs (f:es)
+noRefs _             = True
+
 isIfElseOfIConInt :: IExpr a -> Bool
 isIfElseOfIConInt (IAps (ICon _ (ICPrim _ PrimIf)) [t] [cnd, thn, els]) =
     isIfElseOfIConInt' thn && isIfElseOfIConInt' els
@@ -1341,7 +1359,7 @@ isIfElseOfIConInt (IAps (ICon _ (ICPrim _ PrimIf)) [t] [cnd, thn, els]) =
         isIfElseOfIConInt' thn && isIfElseOfIConInt' els
     isIfElseOfIConInt' (ICon _ (ICValue { iValDef = e })) =
         isIfElseOfIConInt' e
-    isIfElseOfIConInt' e = isIConInt e
+    isIfElseOfIConInt' e = isIConInt e || isUndet e
 isIfElseOfIConInt (ICon _ (ICValue { iValDef = e })) = isIfElseOfIConInt e
 isIfElseOfIConInt _ = False
 

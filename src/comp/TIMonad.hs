@@ -460,17 +460,25 @@ findCons ct i = do
     -- traceM ("findCons: " ++ show (ct,i))
     r <- getSymTab
     case findConVis r i of
-     Just [ConInfo ti _ a _ _] -> return (updAssumpPos i a, ti)
+     Just [ConInfo { ci_id = ti, ci_assump = a }] -> return (updAssumpPos i a, ti)
      Just cs -> do
         s <- getSubst
         let ct' = apSub s ct
         case leftCon (expandSyn ct') of
          Nothing -> errorAtId (EConstrAmb (pfpString ct')) i
-         Just di -> case [ a | ConInfo i' _ a _ _ <- cs, qualEq di i'] of
+         Just di -> case [ a | ConInfo {ci_id = i', ci_assump = a} <- cs, qualEq di i'] of
                    [a] -> return (updAssumpPos i a, di)
-                   []  -> errorAtId EUnboundCon i
+                   []  -> errSuggest r i
                    _   -> internalError "findCons ambig"
-     Nothing -> errorAtId EUnboundCon i
+     Nothing -> errSuggest r i
+  where
+    errSuggest :: SymTab -> Id -> TI (Assump, Id)
+    errSuggest r i =
+      let mSuggest = case findType r i of
+            Just (TypeInfo _ KNum _ _) -> Just "valueOf"
+            Just (TypeInfo _ KStr _ _) -> Just "stringOf"
+            _ -> Nothing
+      in err (getIdPosition i, EUnboundCon (pfpString i) mSuggest)
 
 findTyCon :: Id -> TI TyCon
 findTyCon i = do
@@ -573,10 +581,10 @@ findFields struct_ty0 field_id = do
         getSortInfo qtc TIabstract =
             -- this should only occur for primitives
             (True, Nothing)
-        getSortInfo qtc (TIdata []) =
+        getSortInfo qtc (TIdata [] _) =
             -- XXX we can't tell if its fields are visible
             (True, Nothing)
-        getSortInfo qtc (TIdata (c:_)) =
+        getSortInfo qtc (TIdata (c:_) _) =
             case (findCon symt c) of
               Nothing -> internalError ("getSortInfo findCon: " ++
                                         ppReadable (qtc, c))
